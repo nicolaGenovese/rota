@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#163b33">
+    <title>Weekly Schedule</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="vendor/xlsx.full.min.js" defer></script>
+    <script src="script.js" defer></script>
+</head>
+<body>
+    <main class="container">
+        <header class="page-header">
+            <div>
+                <p class="eyebrow">Staff planning</p>
+                <h1>Weekly Schedule</h1>
+                <p class="subtitle">Enter shifts in the format 00:00-00:00. Hours are calculated automatically.</p>
+            </div>
+        </header>
+
+        <p class="local-note">Your schedule is saved automatically in this browser.</p>
+
+        <div class="table-wrapper">
+            <table id="scheduleTable">
+                <thead>
+                    <tr>
+                        <th scope="col">Employee</th>
+                        <th scope="col">Monday</th>
+                        <th scope="col">Tuesday</th>
+                        <th scope="col">Wednesday</th>
+                        <th scope="col">Thursday</th>
+                        <th scope="col">Friday</th>
+                        <th scope="col">Saturday</th>
+                        <th scope="col">Sunday</th>
+                        <th scope="col">Total Hours</th>
+                    </tr>
+                </thead>
+                <tbody id="scheduleBody"></tbody>
+                <tfoot>
+                    <tr class="total-row">
+                        <th scope="row">Daily Total</th>
+                        <td id="mon-total">0,0</td>
+                        <td id="tue-total">0,0</td>
+                        <td id="wed-total">0,0</td>
+                        <td id="thu-total">0,0</td>
+                        <td id="fri-total">0,0</td>
+                        <td id="sat-total">0,0</td>
+                        <td id="sun-total">0,0</td>
+                        <td class="grand-total" id="grand-total">0,0</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <div class="button-group" aria-label="Azioni">
+            <button class="btn btn-primary" id="pdfDownloadButton" type="button">Download PDF</button>
+            <button class="btn btn-excel" id="excelButton" type="button">Download Excel</button>
+            <button class="btn btn-secondary" id="pdfPrintButton" type="button">Print PDF</button>
+            <button class="btn btn-danger" id="clearButton" type="button">Clear schedule</button>
+        </div>
+        <p class="print-hint">Choose “Save as PDF” in the print dialog to save a copy.</p>
+        <p id="message" class="message" role="status" aria-live="polite"></p>
+    </main>
+</body>
+</html>
