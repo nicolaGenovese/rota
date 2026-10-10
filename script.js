@@ -268,7 +268,7 @@ function buildSchedulePdf(employees) {
     };
 
     drawText('Weekly Schedule', margin, pageHeight - 45, 22, { bold: true, color: '#163b33' });
-    drawText('Enter shifts in the format 00:00-00:00. Hours are calculated automatically.', margin, pageHeight - 68, 10, { color: '#62726d' });
+    
 
     const headers = ['Employee', ...DAYS.map(day => day.label), 'Total Hours'];
     let x = tableX;
