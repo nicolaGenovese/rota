@@ -45,6 +45,34 @@ h1 {
 .subtitle { margin: 10px 0 0; color: #62726d; font-size: 14px; }
 .local-note { margin: 0 0 14px; color: #60736b; font-size: 13px; }
 
+.date-range-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 0 0 18px;
+}
+.date-range-field {
+    display: flex;
+    flex: 1 1 220px;
+    flex-direction: column;
+    gap: 6px;
+    color: #62726d;
+    font-size: 13px;
+    font-weight: 700;
+}
+.date-range-field input {
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 10px;
+    border: 1px solid #d7e1da;
+    border-radius: 6px;
+    background: #fff;
+    color: #18332e;
+    font: inherit;
+}
+.date-range-field input:focus-visible { outline: 2px solid #74b69a; outline-offset: 1px; }
+.print-date-range { display: none; }
+
 .table-wrapper {
     overflow-x: auto;
     border: 1px solid #dbe5de;
@@ -146,6 +174,7 @@ tr > :last-child { border-right: 0; }
     body { padding: 12px; }
     .container { padding: 18px 12px; border-radius: 12px; }
     .button-group { align-items: stretch; flex-direction: column; }
+    .date-range-controls { flex-direction: column; gap: 12px; }
     .btn { width: 100%; }
 }
 
@@ -168,6 +197,8 @@ tr > :last-child { border-right: 0; }
     .eyebrow { font-size: 9pt; }
     h1 { font-size: 20pt; }
     .subtitle { display: none !important; }
+    .date-range-controls { display: none !important; }
+    .print-date-range { display: block; margin: 8px 0 12px; color: #62726d; font-size: 9pt; }
     .local-note, .button-group, .print-hint, .message { display: none !important; }
     .table-wrapper {
         width: 100%;

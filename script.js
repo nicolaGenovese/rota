@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'turniSettimanali';
+const DATE_RANGE_STORAGE_KEY = 'turniSettimanaliDateRange';
 const DAYS = [
     { label: 'Monday', totalId: 'mon-total' },
     { label: 'Tuesday', totalId: 'tue-total' },
@@ -24,6 +25,7 @@ document.addEventListener('DOMContentLoaded', initializeSchedule);
 function initializeSchedule() {
     const savedData = readSavedSchedule();
     renderRows(savedData || DEFAULT_EMPLOYEES);
+    initializeDateRange();
 
     document.getElementById('scheduleBody').addEventListener('input', () => {
         calculateTotals();
@@ -148,6 +150,58 @@ function formatHours(hours) {
     return hours.toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
+function initializeDateRange() {
+    const dateRange = readSavedDateRange();
+    document.getElementById('startDate').value = dateRange.startDate;
+    document.getElementById('endDate').value = dateRange.endDate;
+    document.getElementById('startDate').addEventListener('input', saveDateRange);
+    document.getElementById('endDate').addEventListener('input', saveDateRange);
+    updatePrintDateRange(dateRange);
+}
+
+function readSavedDateRange() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(DATE_RANGE_STORAGE_KEY) || '{}');
+        return {
+            startDate: typeof saved.startDate === 'string' ? saved.startDate : '',
+            endDate: typeof saved.endDate === 'string' ? saved.endDate : ''
+        };
+    } catch (error) {
+        return { startDate: '', endDate: '' };
+    }
+}
+
+function collectDateRange() {
+    return {
+        startDate: document.getElementById('startDate').value,
+        endDate: document.getElementById('endDate').value
+    };
+}
+
+function saveDateRange() {
+    const dateRange = collectDateRange();
+    updatePrintDateRange(dateRange);
+    try {
+        localStorage.setItem(DATE_RANGE_STORAGE_KEY, JSON.stringify(dateRange));
+    } catch (error) {
+        showMessage('Could not save the date range in this browser.', 'error');
+    }
+}
+
+function formatDateForDisplay(value) {
+    if (!value) return 'Not set';
+    const [year, month, day] = value.split('-');
+    return `${day}/${month}/${year}`;
+}
+
+function formatDateRange(dateRange) {
+    return `Starting Date: ${formatDateForDisplay(dateRange.startDate)}    Ending Date: ${formatDateForDisplay(dateRange.endDate)}`;
+}
+
+function updatePrintDateRange(dateRange = collectDateRange()) {
+    document.getElementById('printDateRange').textContent = formatDateRange(dateRange);
+}
+
 function generateExcel() {
     if (!window.XLSX) {
         showMessage('Excel export is unavailable. Reload the page and try again.', 'error');
@@ -189,7 +243,7 @@ function generateExcel() {
 
 function generatePdfDownload() {
     calculateTotals();
-    const pdf = buildSchedulePdf(collectSchedule());
+    const pdf = buildSchedulePdf(collectSchedule(), collectDateRange());
     const blob = new Blob([pdf], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -205,7 +259,7 @@ function generatePdfDownload() {
     showMessage('PDF file downloaded.', 'success');
 }
 
-function buildSchedulePdf(employees) {
+function buildSchedulePdf(employees, dateRange) {
     const pageWidth = 841.89;
     const pageHeight = 595.28;
     const margin = 24;
@@ -268,7 +322,7 @@ function buildSchedulePdf(employees) {
     };
 
     drawText('Weekly Schedule', margin, pageHeight - 45, 22, { bold: true, color: '#163b33' });
-    
+    drawText(formatDateRange(dateRange), margin, pageHeight - 68, 10, { color: '#62726d' });
 
     const headers = ['Employee', ...DAYS.map(day => day.label), 'Total Hours'];
     let x = tableX;
