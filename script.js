@@ -1,5 +1,11 @@
 const STORAGE_KEY = 'turniSettimanali';
 const DATE_RANGE_STORAGE_KEY = 'turniSettimanaliDateRange';
+const LOCAL_LAST_EDITED_KEY = 'turniSettimanaliLastEdited';
+const SUPABASE_URL = 'https://sudysoizwfddpladkzeo.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kcmzYpi72KPwt1aI_SOyVQ_-J2FpTqR';
+const SUPABASE_TABLE = 'weekly_schedules';
+let supabaseClient = null;
+let scheduleEditedSinceLoad = false;
 const DAYS = [
     { label: 'Monday', totalId: 'mon-total' },
     { label: 'Tuesday', totalId: 'tue-total' },
@@ -28,14 +34,17 @@ function initializeSchedule() {
     initializeDateRange();
 
     document.getElementById('scheduleBody').addEventListener('input', () => {
+        scheduleEditedSinceLoad = true;
         calculateTotals();
         saveSchedule();
     });
+    document.getElementById('saveButton').addEventListener('click', saveToSupabase);
     document.getElementById('pdfDownloadButton').addEventListener('click', generatePdfDownload);
     document.getElementById('excelButton').addEventListener('click', generateExcel);
     document.getElementById('pdfPrintButton').addEventListener('click', () => window.print());
     document.getElementById('clearButton').addEventListener('click', clearAll);
     calculateTotals();
+    restoreSupabaseSchedule();
 }
 
 function readSavedSchedule() {
@@ -103,6 +112,7 @@ function collectSchedule() {
 function saveSchedule() {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(collectSchedule()));
+        localStorage.setItem(LOCAL_LAST_EDITED_KEY, new Date().toISOString());
         clearMessage();
     } catch (error) {
         showMessage('Could not save the schedule in this browser.', 'error');
@@ -154,8 +164,14 @@ function initializeDateRange() {
     const dateRange = readSavedDateRange();
     document.getElementById('startDate').value = dateRange.startDate;
     document.getElementById('endDate').value = dateRange.endDate;
-    document.getElementById('startDate').addEventListener('input', saveDateRange);
-    document.getElementById('endDate').addEventListener('input', saveDateRange);
+    document.getElementById('startDate').addEventListener('input', () => {
+        scheduleEditedSinceLoad = true;
+        saveDateRange();
+    });
+    document.getElementById('endDate').addEventListener('input', () => {
+        scheduleEditedSinceLoad = true;
+        saveDateRange();
+    });
     updatePrintDateRange(dateRange);
 }
 
@@ -183,6 +199,7 @@ function saveDateRange() {
     updatePrintDateRange(dateRange);
     try {
         localStorage.setItem(DATE_RANGE_STORAGE_KEY, JSON.stringify(dateRange));
+        localStorage.setItem(LOCAL_LAST_EDITED_KEY, new Date().toISOString());
     } catch (error) {
         showMessage('Could not save the date range in this browser.', 'error');
     }
@@ -200,6 +217,124 @@ function formatDateRange(dateRange) {
 
 function updatePrintDateRange(dateRange = collectDateRange()) {
     document.getElementById('printDateRange').textContent = formatDateRange(dateRange);
+}
+
+function getSupabaseClient() {
+    if (!window.supabase?.createClient) {
+        throw new Error('Supabase client did not load.');
+    }
+    if (!supabaseClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    }
+    return supabaseClient;
+}
+
+async function saveToSupabase() {
+    const button = document.getElementById('saveButton');
+    const originalLabel = button.textContent;
+    const dateRange = collectDateRange();
+    if (dateRange.startDate && dateRange.endDate && dateRange.endDate < dateRange.startDate) {
+        showMessage('Ending Date must be on or after Starting Date.', 'error');
+        return;
+    }
+
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    button.setAttribute('aria-busy', 'true');
+    try {
+        const client = getSupabaseClient();
+        const { data: sessionData, error: sessionError } = await client.auth.getSession();
+        if (sessionError) throw sessionError;
+
+        let session = sessionData.session;
+        if (!session) {
+            const { data, error } = await client.auth.signInAnonymously();
+            if (error) throw error;
+            session = data.session;
+        }
+        if (!session?.user?.id) throw new Error('Supabase session could not be created.');
+
+        const updatedAt = new Date().toISOString();
+        const { error: saveError } = await client
+            .from(SUPABASE_TABLE)
+            .upsert({
+                user_id: session.user.id,
+                schedule: collectSchedule(),
+                start_date: dateRange.startDate || null,
+                end_date: dateRange.endDate || null,
+                updated_at: updatedAt
+            }, { onConflict: 'user_id' });
+        if (saveError) throw saveError;
+
+        localStorage.setItem(LOCAL_LAST_EDITED_KEY, updatedAt);
+        scheduleEditedSinceLoad = false;
+        showMessage('Schedule saved to Supabase.', 'success');
+    } catch (error) {
+        const message = String(error?.message || '');
+        if (/anonymous.*disabled|anonymous provider.*disabled/i.test(message)) {
+            showMessage('Enable anonymous sign-ins in Supabase Authentication settings to save online.', 'error');
+        } else if (/row-level security|permission denied/i.test(message)) {
+            showMessage('Supabase blocked this save. Check the weekly_schedules access policies.', 'error');
+        } else if (/failed to fetch|network/i.test(message)) {
+            showMessage('Supabase could not be reached. Check your internet connection and try again.', 'error');
+        } else {
+            showMessage('Could not save the schedule to Supabase. Please try again.', 'error');
+        }
+    } finally {
+        button.disabled = false;
+        button.textContent = originalLabel;
+        button.removeAttribute('aria-busy');
+    }
+}
+
+async function restoreSupabaseSchedule() {
+    if (!window.supabase?.createClient) return;
+    try {
+        const client = getSupabaseClient();
+        const { data: sessionData, error: sessionError } = await client.auth.getSession();
+        if (sessionError) throw sessionError;
+        const session = sessionData.session;
+        if (!session?.user?.id) return;
+
+        const { data, error } = await client
+            .from(SUPABASE_TABLE)
+            .select('schedule, start_date, end_date, updated_at')
+            .eq('user_id', session.user.id)
+            .maybeSingle();
+        if (error) throw error;
+        if (!data || !Array.isArray(data.schedule)) return;
+
+        const localLastEdited = Date.parse(localStorage.getItem(LOCAL_LAST_EDITED_KEY) || '') || 0;
+        const cloudLastEdited = Date.parse(data.updated_at || '') || 0;
+        if (scheduleEditedSinceLoad || localLastEdited > cloudLastEdited) return;
+
+        const remoteSchedule = Array.from({ length: 7 }, (_, index) => {
+            const row = data.schedule[index] || {};
+            return {
+                name: typeof row.name === 'string' ? row.name : '',
+                shifts: DAYS.map((_, dayIndex) =>
+                    Array.isArray(row.shifts) && typeof row.shifts[dayIndex] === 'string'
+                        ? row.shifts[dayIndex]
+                        : ''
+                )
+            };
+        });
+        const dateRange = {
+            startDate: data.start_date || '',
+            endDate: data.end_date || ''
+        };
+        renderRows(remoteSchedule);
+        calculateTotals();
+        document.getElementById('startDate').value = dateRange.startDate;
+        document.getElementById('endDate').value = dateRange.endDate;
+        updatePrintDateRange(dateRange);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteSchedule));
+        localStorage.setItem(DATE_RANGE_STORAGE_KEY, JSON.stringify(dateRange));
+        localStorage.setItem(LOCAL_LAST_EDITED_KEY, data.updated_at || new Date().toISOString());
+        showMessage('Saved Supabase schedule loaded.', 'success');
+    } catch (error) {
+        showMessage('Could not load the saved schedule from Supabase.', 'error');
+    }
 }
 
 function generateExcel() {

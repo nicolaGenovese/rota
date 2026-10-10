@@ -160,7 +160,9 @@ tr > :last-child { border-right: 0; }
 
 .btn:hover { filter: brightness(.94); }
 .btn:focus-visible { outline: 3px solid #81bfa4; outline-offset: 2px; }
+.btn:disabled { cursor: wait; opacity: .75; }
 .btn-primary { background: #28775c; }
+.btn-save { background: #1d6750; }
 .btn-secondary { background: #315d72; }
 .btn-excel { background: #6b5b95; }
 .btn-danger { background: #a54842; }

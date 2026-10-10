@@ -7,6 +7,7 @@
     <title>Weekly Schedule</title>
     <link rel="stylesheet" href="styles.css">
     <script src="vendor/xlsx.full.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js" defer></script>
     <script src="script.js" defer></script>
 </head>
 <body>
@@ -31,7 +32,7 @@
         </div>
         <p id="printDateRange" class="print-date-range"></p>
 
-        <p class="local-note">Your schedule is saved automatically in this browser.</p>
+        <p class="local-note">Your schedule is saved automatically in this browser. Use Save to sync it with Supabase.</p>
 
         <div class="table-wrapper">
             <table id="scheduleTable">
@@ -66,6 +67,7 @@
         </div>
 
         <div class="button-group" aria-label="Azioni">
+            <button class="btn btn-save" id="saveButton" type="button">Save</button>
             <button class="btn btn-primary" id="pdfDownloadButton" type="button">Download PDF</button>
             <button class="btn btn-excel" id="excelButton" type="button">Download Excel</button>
             <button class="btn btn-secondary" id="pdfPrintButton" type="button">Print PDF</button>
