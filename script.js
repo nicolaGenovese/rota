@@ -391,16 +391,12 @@ function buildSchedulePdf(employees, dateRange) {
     const tableX = margin;
     const tableWidth = pageWidth - margin * 2;
     const employeeWidth = 143;
-    const totalWidth = 81;
-    const dayWidth = (tableWidth - employeeWidth - totalWidth) / DAYS.length;
-    const columnWidths = [employeeWidth, ...DAYS.map(() => dayWidth), totalWidth];
+    const dayWidth = (tableWidth - employeeWidth) / DAYS.length;
+    const columnWidths = [employeeWidth, ...DAYS.map(() => dayWidth)];
     const headerHeight = 28;
     const rowHeight = 30;
     const tableTop = pageHeight - 105;
     const commands = [];
-    const dailyTotals = Array(DAYS.length).fill(0);
-    let grandTotal = 0;
-
     const rgb = hex => {
         const value = hex.replace('#', '');
         return [0, 2, 4].map(offset => (parseInt(value.slice(offset, offset + 2), 16) / 255).toFixed(3)).join(' ');
@@ -449,7 +445,7 @@ function buildSchedulePdf(employees, dateRange) {
     drawText('Weekly Schedule', margin, pageHeight - 45, 22, { bold: true, color: '#163b33' });
     drawText(formatDateRange(dateRange), margin, pageHeight - 68, 10, { color: '#62726d' });
 
-    const headers = ['Employee', ...DAYS.map(day => day.label), 'Total Hours'];
+    const headers = ['Employee', ...DAYS.map(day => day.label)];
     let x = tableX;
     headers.forEach((header, index) => {
         drawRect(x, tableTop - headerHeight, columnWidths[index], headerHeight, '#163b33');
@@ -458,51 +454,26 @@ function buildSchedulePdf(employees, dateRange) {
     });
 
     employees.forEach((employee, rowIndex) => {
-        let weeklyTotal = 0;
-        employee.shifts.forEach((shift, dayIndex) => {
-            const hours = parseTimeRange(shift);
-            dailyTotals[dayIndex] += hours;
-            weeklyTotal += hours;
-        });
-        grandTotal += weeklyTotal;
-
         const rowTop = tableTop - headerHeight - rowIndex * rowHeight;
         const rowBottom = rowTop - rowHeight;
         x = tableX;
-        const values = [employee.name, ...employee.shifts, formatHours(weeklyTotal)];
+        const values = [employee.name, ...employee.shifts];
         values.forEach((value, columnIndex) => {
             const width = columnWidths[columnIndex];
-            const fill = columnIndex === columnWidths.length - 1
-                ? '#e7f3eb'
-                : rowIndex % 2 === 1 ? '#f8faf8' : '#ffffff';
+            const fill = rowIndex % 2 === 1 ? '#f8faf8' : '#ffffff';
             drawRect(x, rowBottom, width, rowHeight, fill);
             const fontSize = columnIndex === 0 && value
                 ? Math.max(6, Math.min(9, (width - 12) / (String(value).length * 0.52)))
                 : 9;
             const textX = columnIndex === 0 ? x + 6 : x + width / 2;
             drawText(value, textX, rowBottom + rowHeight / 2 - fontSize / 3, fontSize, {
-                bold: columnIndex === columnWidths.length - 1,
                 align: columnIndex === 0 ? 'left' : 'center'
             });
             x += width;
         });
     });
 
-    const footerTop = tableTop - headerHeight - employees.length * rowHeight;
-    const footerBottom = footerTop - rowHeight;
-    x = tableX;
-    const footerValues = ['Daily Total', ...dailyTotals.map(formatHours), formatHours(grandTotal)];
-    footerValues.forEach((value, columnIndex) => {
-        const width = columnWidths[columnIndex];
-        drawRect(x, footerBottom, width, rowHeight, columnIndex === columnWidths.length - 1 ? '#d8e9b1' : '#edf4d4');
-        drawText(value, columnIndex === 0 ? x + 6 : x + width / 2, footerBottom + rowHeight / 2 - 3, 9, {
-            bold: true,
-            align: columnIndex === 0 ? 'left' : 'center'
-        });
-        x += width;
-    });
-
-    const tableBottom = footerBottom;
+    const tableBottom = tableTop - headerHeight - employees.length * rowHeight;
     drawLine(tableX, tableTop, tableX + tableWidth, tableTop);
     drawLine(tableX, tableBottom, tableX + tableWidth, tableBottom);
     let verticalX = tableX;
@@ -511,7 +482,7 @@ function buildSchedulePdf(employees, dateRange) {
         verticalX += width;
         drawLine(verticalX, tableBottom, verticalX, tableTop);
     });
-    for (let row = 0; row <= employees.length + 1; row += 1) {
+    for (let row = 0; row <= employees.length; row += 1) {
         const y = tableTop - headerHeight - row * rowHeight;
         drawLine(tableX, y, tableX + tableWidth, y);
     }

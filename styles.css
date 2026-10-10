@@ -232,4 +232,7 @@ tr > :last-child { border-right: 0; }
         visibility: hidden;
     }
     .weekly-total, .total-row, .grand-total { print-color-adjust: exact; }
+    #scheduleTable thead th:last-child,
+    #scheduleTable tbody td.weekly-total,
+    #scheduleTable tfoot { display: none !important; }
 }
