@@ -4,10 +4,9 @@ const LOCAL_LAST_EDITED_KEY = 'turniSettimanaliLastEdited';
 const SUPABASE_URL = 'https://sudysoizwfddpladkzeo.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kcmzYpi72KPwt1aI_SOyVQ_-J2FpTqR';
 const SUPABASE_TABLE = 'weekly_schedules';
-const PUBLIC_SCHEDULE_OWNER_ID = '1c3d3e6c-6dbe-4418-b8d6-3e3251b407a9';
+const PUBLIC_SCHEDULE_ROW_ID = '1c3d3e6c-6dbe-4418-b8d6-3e3251b407a9';
 let supabaseClient = null;
 let scheduleEditedSinceLoad = false;
-let canEditSchedule = false;
 const DAYS = [
     { label: 'Monday', totalId: 'mon-total' },
     { label: 'Tuesday', totalId: 'tue-total' },
@@ -34,7 +33,6 @@ function initializeSchedule() {
     const savedData = readSavedSchedule();
     renderRows(savedData || DEFAULT_EMPLOYEES);
     initializeDateRange();
-    setScheduleAccess(false);
 
     document.getElementById('scheduleBody').addEventListener('input', () => {
         scheduleEditedSinceLoad = true;
@@ -232,26 +230,8 @@ function getSupabaseClient() {
     return supabaseClient;
 }
 
-function setScheduleAccess(canEdit) {
-    canEditSchedule = canEdit;
-    document.querySelectorAll('#scheduleBody input').forEach(input => {
-        input.readOnly = !canEdit;
-    });
-    document.getElementById('startDate').disabled = !canEdit;
-    document.getElementById('endDate').disabled = !canEdit;
-    document.getElementById('saveButton').hidden = !canEdit;
-    document.getElementById('clearButton').hidden = !canEdit;
-    document.getElementById('localNote').textContent = canEdit
-        ? 'Changes are saved in this browser. Use Save to publish them for everyone.'
-        : 'Public schedule · view only. No login is required to view it.';
-}
-
 async function saveToSupabase() {
     const button = document.getElementById('saveButton');
-    if (!canEditSchedule) {
-        showMessage('Only the schedule owner can publish changes.', 'error');
-        return;
-    }
     const originalLabel = button.textContent;
     const dateRange = collectDateRange();
     if (dateRange.startDate && dateRange.endDate && dateRange.endDate < dateRange.startDate) {
@@ -264,21 +244,11 @@ async function saveToSupabase() {
     button.setAttribute('aria-busy', 'true');
     try {
         const client = getSupabaseClient();
-        const { data: sessionData, error: sessionError } = await client.auth.getSession();
-        if (sessionError) throw sessionError;
-
-        const session = sessionData.session;
-        if (session?.user?.id !== PUBLIC_SCHEDULE_OWNER_ID) {
-            setScheduleAccess(false);
-            showMessage('Only the schedule owner can publish changes.', 'error');
-            return;
-        }
-
         const updatedAt = new Date().toISOString();
         const { error: saveError } = await client
             .from(SUPABASE_TABLE)
             .upsert({
-                user_id: session.user.id,
+                user_id: PUBLIC_SCHEDULE_ROW_ID,
                 schedule: collectSchedule(),
                 start_date: dateRange.startDate || null,
                 end_date: dateRange.endDate || null,
@@ -288,13 +258,11 @@ async function saveToSupabase() {
 
         localStorage.setItem(LOCAL_LAST_EDITED_KEY, updatedAt);
         scheduleEditedSinceLoad = false;
-        showMessage('Schedule saved to Supabase.', 'success');
+        showMessage('Shared schedule saved for everyone.', 'success');
     } catch (error) {
         const message = String(error?.message || '');
-        if (/anonymous.*disabled|anonymous provider.*disabled/i.test(message)) {
-            showMessage('Enable anonymous sign-ins in Supabase Authentication settings to save online.', 'error');
-        } else if (/row-level security|permission denied/i.test(message)) {
-            showMessage('Supabase blocked this save. Check the weekly_schedules access policies.', 'error');
+        if (/row-level security|permission denied/i.test(message)) {
+            showMessage('Supabase blocked this save. Check the public weekly_schedules write policies.', 'error');
         } else if (/failed to fetch|network/i.test(message)) {
             showMessage('Supabase could not be reached. Check your internet connection and try again.', 'error');
         } else {
@@ -314,15 +282,10 @@ async function restoreSupabaseSchedule() {
     }
     try {
         const client = getSupabaseClient();
-        const { data: sessionData, error: sessionError } = await client.auth.getSession();
-        if (sessionError) throw sessionError;
-        const session = sessionData.session;
-        const isOwner = session?.user?.id === PUBLIC_SCHEDULE_OWNER_ID;
-
         const { data, error } = await client
             .from(SUPABASE_TABLE)
             .select('user_id, schedule, start_date, end_date, updated_at')
-            .eq('user_id', PUBLIC_SCHEDULE_OWNER_ID)
+            .eq('user_id', PUBLIC_SCHEDULE_ROW_ID)
             .maybeSingle();
         if (error) throw error;
         if (!data || !Array.isArray(data.schedule)) {
@@ -330,12 +293,8 @@ async function restoreSupabaseSchedule() {
             return;
         }
 
-        const localLastEdited = Date.parse(localStorage.getItem(LOCAL_LAST_EDITED_KEY) || '') || 0;
-        const cloudLastEdited = Date.parse(data.updated_at || '') || 0;
-        const hasLocalSchedule = Boolean(localStorage.getItem(STORAGE_KEY));
-        setScheduleAccess(isOwner);
-        if (isOwner && hasLocalSchedule && (scheduleEditedSinceLoad || localLastEdited > cloudLastEdited)) {
-            showMessage('Your newer local changes are ready to publish.', 'success');
+        if (scheduleEditedSinceLoad) {
+            showMessage('Your local edits are preserved. Press Save to share them.', 'success');
             return;
         }
 
@@ -362,9 +321,8 @@ async function restoreSupabaseSchedule() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteSchedule));
         localStorage.setItem(DATE_RANGE_STORAGE_KEY, JSON.stringify(dateRange));
         localStorage.setItem(LOCAL_LAST_EDITED_KEY, data.updated_at || new Date().toISOString());
-        showMessage(isOwner ? 'Your public schedule loaded.' : 'Public schedule loaded.', 'success');
+        showMessage('Shared schedule loaded. Anyone with the link can edit it.', 'success');
     } catch (error) {
-        setScheduleAccess(false);
         showMessage('Could not load the saved schedule from Supabase.', 'error');
     }
 }
