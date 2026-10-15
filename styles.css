@@ -118,7 +118,7 @@ tbody tr:nth-child(even) { background: #f8faf8; }
 tbody tr:last-child td, tfoot th, tfoot td { border-bottom: 0; }
 tr > :last-child { border-right: 0; }
 
-.employee-input, .shift-input, .shift-type-select {
+.employee-input, .shift-input {
     width: 100%;
     min-width: 0;
     padding: 8px 7px;
@@ -132,13 +132,40 @@ tr > :last-child { border-right: 0; }
     text-align: center;
 }
 
-.shift-type-select { padding: 6px 3px; font-size: 10px; }
-.shift-type-select:focus-visible { outline: 2px solid #74b69a; outline-offset: 1px; }
-.shift-input[hidden] { display: none; }
+.shift-cell { position: relative; }
+.shift-input { padding-right: 28px; }
+.shift-type-select {
+    position: absolute;
+    top: 50%;
+    right: 8px;
+    z-index: 2;
+    width: 24px;
+    height: 34px;
+    padding: 0;
+    transform: translateY(-50%);
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: transparent;
+    cursor: pointer;
+}
+.shift-cell::after {
+    position: absolute;
+    top: 50%;
+    right: 17px;
+    width: 7px;
+    height: 7px;
+    transform: translateY(-70%) rotate(45deg);
+    border-right: 2px solid #50665d;
+    border-bottom: 2px solid #50665d;
+    content: '';
+    pointer-events: none;
+}
+.shift-type-select:focus-visible { outline: 2px solid #74b69a; outline-offset: -3px; }
 td.day-off { background: #e7f1ff !important; }
 td.holiday { background: #fff0d9 !important; }
-td.day-off .shift-type-select { border-color: #9bc4e8; color: #234d70; }
-td.holiday .shift-type-select { border-color: #e8bf72; color: #78520c; }
+td.day-off .shift-input { border-color: #9bc4e8; background: #e7f1ff; color: #234d70; }
+td.holiday .shift-input { border-color: #e8bf72; background: #fff0d9; color: #78520c; }
 
 .employee-input { text-align: left; }
 .employee-input::placeholder, .shift-input::placeholder {
@@ -238,7 +265,7 @@ td.holiday .shift-type-select { border-color: #e8bf72; color: #78520c; }
     tbody tr { break-inside: avoid; }
     thead th { background: #163b33 !important; color: #fff !important; print-color-adjust: exact; }
     tbody tr:nth-child(even) { background: #f8faf8 !important; print-color-adjust: exact; }
-    .employee-input, .shift-input, .shift-type-select {
+    .employee-input, .shift-input {
         padding: 0;
         border: 0;
         border-radius: 0;
@@ -252,8 +279,7 @@ td.holiday .shift-type-select { border-color: #e8bf72; color: #78520c; }
         opacity: 0 !important;
         visibility: hidden;
     }
-    .shift-type-select { width: 100%; padding: 0; border: 0; background: transparent; font-size: 8pt; print-color-adjust: exact; }
-    td:not(.day-off):not(.holiday) .shift-type-select { display: none !important; }
+    .shift-type-select, .shift-cell::after { display: none !important; }
     td.day-off, td.holiday { print-color-adjust: exact; }
     .weekly-total, .total-row, .grand-total { print-color-adjust: exact; }
     #scheduleTable thead th:last-child,

@@ -204,8 +204,8 @@ function renderRows(employees) {
             const savedValue = employee.shifts?.[dayIndex] || '';
             shiftType.value = getShiftType(savedValue);
             input.value = getShiftText(savedValue);
-            input.hidden = shiftType.value !== 'shift';
-            cell.append(shiftType, input);
+            cell.classList.add('shift-cell');
+            cell.append(input, shiftType);
             updateShiftCellAppearance(shiftType);
             row.append(cell);
         });
@@ -242,7 +242,10 @@ function getShiftText(value) {
 function updateShiftCellAppearance(shiftType) {
     const cell = shiftType.closest('td');
     const shiftInput = cell.querySelector('.shift-input');
-    shiftInput.hidden = shiftType.value !== 'shift';
+    shiftInput.readOnly = shiftType.value !== 'shift';
+    if (shiftType.value === 'day-off') shiftInput.value = 'Day off';
+    else if (shiftType.value === 'holiday') shiftInput.value = 'Holiday';
+    else if (shiftInput.value === 'Day off' || shiftInput.value === 'Holiday') shiftInput.value = '';
     cell.classList.toggle('day-off', shiftType.value === 'day-off');
     cell.classList.toggle('holiday', shiftType.value === 'holiday');
 }
