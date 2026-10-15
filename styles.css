@@ -162,6 +162,7 @@ tr > :last-child { border-right: 0; }
     pointer-events: none;
 }
 .shift-type-select:focus-visible { outline: 2px solid #74b69a; outline-offset: -3px; }
+.shift-type-select option { color: #18332e; background: #fff; }
 td.day-off { background: #e7f1ff !important; }
 td.holiday { background: #fff0d9 !important; }
 td.day-off .shift-input { border-color: #9bc4e8; background: #e7f1ff; color: #234d70; }

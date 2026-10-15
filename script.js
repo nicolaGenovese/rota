@@ -48,6 +48,13 @@ function initializeSchedule() {
 
     const scheduleBody = document.getElementById('scheduleBody');
     scheduleBody.addEventListener('input', event => {
+        if (event.target.matches('.shift-input')) {
+            const shiftType = event.target.parentElement.querySelector('.shift-type-select');
+            if (shiftType.value === 'day-off' || shiftType.value === 'holiday') {
+                shiftType.value = '';
+                updateShiftCellAppearance(shiftType);
+            }
+        }
         if (!event.target.matches('.shift-type-select')) handleScheduleEdit();
     });
     scheduleBody.addEventListener('change', event => {
@@ -186,7 +193,6 @@ function renderRows(employees) {
             shiftType.className = 'shift-type-select';
             shiftType.setAttribute('aria-label', `${day.label}, employee ${rowIndex + 1} shift type`);
             [
-                { value: 'shift', label: 'Shift' },
                 { value: 'day-off', label: 'Day off' },
                 { value: 'holiday', label: 'Holiday' }
             ].forEach(optionData => {
@@ -242,7 +248,6 @@ function getShiftText(value) {
 function updateShiftCellAppearance(shiftType) {
     const cell = shiftType.closest('td');
     const shiftInput = cell.querySelector('.shift-input');
-    shiftInput.readOnly = shiftType.value !== 'shift';
     if (shiftType.value === 'day-off') shiftInput.value = 'Day off';
     else if (shiftType.value === 'holiday') shiftInput.value = 'Holiday';
     else if (shiftInput.value === 'Day off' || shiftInput.value === 'Holiday') shiftInput.value = '';
