@@ -45,32 +45,42 @@ h1 {
 .subtitle { margin: 10px 0 0; color: #62726d; font-size: 14px; }
 .local-note { margin: 0 0 14px; color: #60736b; font-size: 13px; }
 
-.date-range-controls {
+.week-navigation {
     display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
     margin: 0 0 18px;
 }
-.date-range-field {
-    display: flex;
-    flex: 1 1 220px;
-    flex-direction: column;
-    gap: 6px;
-    color: #62726d;
-    font-size: 13px;
-    font-weight: 700;
+.week-current { min-width: min(360px, 65vw); text-align: center; }
+.week-current p {
+    margin: 0 0 4px;
+    color: #43816b;
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: .08em;
+    text-transform: uppercase;
 }
-.date-range-field input {
-    width: 100%;
-    min-height: 40px;
-    padding: 8px 10px;
+.week-current h2 { margin: 0; color: #163b33; font-size: 18px; line-height: 1.25; }
+.week-nav-button {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    place-items: center;
     border: 1px solid #d7e1da;
-    border-radius: 6px;
+    border-radius: 50%;
     background: #fff;
-    color: #18332e;
+    color: #1d6750;
     font: inherit;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
 }
-.date-range-field input:focus-visible { outline: 2px solid #74b69a; outline-offset: 1px; }
+.week-nav-button:hover:not(:disabled) { background: #edf5ef; }
+.week-nav-button:focus-visible { outline: 2px solid #74b69a; outline-offset: 2px; }
+.week-nav-button:disabled { cursor: not-allowed; opacity: .4; }
+.day-date { margin-left: 5px; color: #d6eade; font-weight: 800; white-space: nowrap; }
 .print-date-range { display: none; }
 
 .table-wrapper {
@@ -176,8 +186,11 @@ tr > :last-child { border-right: 0; }
     body { padding: 12px; }
     .container { padding: 18px 12px; border-radius: 12px; }
     .button-group { align-items: stretch; flex-direction: column; }
-    .date-range-controls { flex-direction: column; gap: 12px; }
     .btn { width: 100%; }
+    .week-navigation { gap: 10px; }
+    .week-current { min-width: 0; flex: 1; }
+    .week-current h2 { font-size: 15px; }
+    .week-nav-button { width: 38px; height: 38px; flex-basis: 38px; }
 }
 
 @page { size: A4 landscape; margin: 8mm; }
@@ -199,7 +212,7 @@ tr > :last-child { border-right: 0; }
     .eyebrow { font-size: 9pt; }
     h1 { font-size: 20pt; }
     .subtitle { display: none !important; }
-    .date-range-controls { display: none !important; }
+    .week-navigation { display: none !important; }
     .print-date-range { display: block; margin: 8px 0 12px; color: #62726d; font-size: 9pt; }
     .local-note, .button-group, .print-hint, .message { display: none !important; }
     .table-wrapper {

@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'turniSettimanali';
 const DATE_RANGE_STORAGE_KEY = 'turniSettimanaliDateRange';
+const WEEKS_STORAGE_KEY = 'turniSettimanaliWeeks';
 const LOCAL_LAST_EDITED_KEY = 'turniSettimanaliLastEdited';
 const SUPABASE_URL = 'https://sudysoizwfddpladkzeo.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kcmzYpi72KPwt1aI_SOyVQ_-J2FpTqR';
@@ -7,6 +8,10 @@ const SUPABASE_TABLE = 'weekly_schedules';
 const PUBLIC_SCHEDULE_ROW_ID = '1c3d3e6c-6dbe-4418-b8d6-3e3251b407a9';
 let supabaseClient = null;
 let scheduleEditedSinceLoad = false;
+let scheduleByWeek = {};
+let dirtyWeekKeys = new Set();
+let selectedWeekOffset = 0;
+const currentWeekStart = getMonday(new Date());
 const DAYS = [
     { label: 'Monday', totalId: 'mon-total' },
     { label: 'Tuesday', totalId: 'tue-total' },
@@ -30,41 +35,122 @@ const DEFAULT_EMPLOYEES = [
 document.addEventListener('DOMContentLoaded', initializeSchedule);
 
 function initializeSchedule() {
-    const savedData = readSavedSchedule();
-    renderRows(savedData || DEFAULT_EMPLOYEES);
-    initializeDateRange();
+    scheduleByWeek = readSavedSchedules();
+    const initialSchedule = scheduleByWeek[getWeekKey(0)]
+        || (Object.keys(scheduleByWeek).length ? makeBlankWeekSchedule() : DEFAULT_EMPLOYEES);
+    renderRows(initialSchedule);
+    updateWeekNavigation();
 
     document.getElementById('scheduleBody').addEventListener('input', () => {
         scheduleEditedSinceLoad = true;
+        dirtyWeekKeys.add(getWeekKey(selectedWeekOffset));
         calculateTotals();
         saveSchedule();
     });
+    document.getElementById('previousWeekButton').addEventListener('click', () => changeSelectedWeek(-1));
+    document.getElementById('nextWeekButton').addEventListener('click', () => changeSelectedWeek(1));
     document.getElementById('saveButton').addEventListener('click', saveToSupabase);
     document.getElementById('pdfDownloadButton').addEventListener('click', generatePdfDownload);
     document.getElementById('excelButton').addEventListener('click', generateExcel);
     document.getElementById('pdfPrintButton').addEventListener('click', () => window.print());
     document.getElementById('clearButton').addEventListener('click', clearAll);
     calculateTotals();
+    const saveButton = document.getElementById('saveButton');
+    saveButton.disabled = true;
+    saveButton.textContent = 'Loading…';
+    saveButton.setAttribute('aria-busy', 'true');
     restoreSupabaseSchedule();
 }
 
-function readSavedSchedule() {
-    try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (!saved) return null;
+function getMonday(date) {
+    const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    return monday;
+}
 
-        const rows = JSON.parse(saved);
-        if (!Array.isArray(rows)) return null;
-        return Array.from({ length: 7 }, (_, index) => {
-            const row = rows[index] || {};
-            return {
-                name: typeof row.name === 'string' ? row.name : '',
-                shifts: DAYS.map((_, dayIndex) => Array.isArray(row.shifts) && typeof row.shifts[dayIndex] === 'string' ? row.shifts[dayIndex] : '')
-            };
-        });
-    } catch (error) {
-        return null;
+function getWeekDates(offset = selectedWeekOffset) {
+    const monday = new Date(currentWeekStart.getFullYear(), currentWeekStart.getMonth(), currentWeekStart.getDate());
+    monday.setDate(monday.getDate() + offset * 7);
+    return DAYS.map((_, dayIndex) => {
+        const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate());
+        date.setDate(date.getDate() + dayIndex);
+        return date;
+    });
+}
+
+function dateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function getWeekKey(offset = selectedWeekOffset) {
+    return dateKey(getWeekDates(offset)[0]);
+}
+
+function getWeekOffsetForDate(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return 0;
+    const [year, month, day] = value.split('-').map(Number);
+    const monday = getMonday(new Date(year, month - 1, day));
+    return Math.round((monday - currentWeekStart) / (7 * 24 * 60 * 60 * 1000));
+}
+
+function normalizeEmployeeSchedule(rows) {
+    if (!Array.isArray(rows)) return null;
+    return Array.from({ length: 7 }, (_, index) => {
+        const row = rows[index] || {};
+        return {
+            name: typeof row.name === 'string' ? row.name : '',
+            shifts: DAYS.map((_, dayIndex) =>
+                Array.isArray(row.shifts) && typeof row.shifts[dayIndex] === 'string' ? row.shifts[dayIndex] : ''
+            )
+        };
+    });
+}
+
+function normalizeSchedulePayload(payload, legacyDate = '') {
+    if (Array.isArray(payload)) {
+        const rows = normalizeEmployeeSchedule(payload);
+        return rows ? { [getLegacyWeekKey(legacyDate)]: rows } : {};
     }
+    const weeks = payload && !Array.isArray(payload) && typeof payload === 'object'
+        ? (payload.weeks && typeof payload.weeks === 'object' ? payload.weeks : payload)
+        : {};
+    return Object.fromEntries(Object.entries(weeks)
+        .filter(([key, rows]) => /^\d{4}-\d{2}-\d{2}$/.test(key)
+            && Array.isArray(rows)
+            && getWeekOffsetForDate(key) >= 0
+            && getWeekOffsetForDate(key) <= 3)
+        .map(([key, rows]) => [key, normalizeEmployeeSchedule(rows)]));
+}
+
+function getLegacyWeekKey(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return getWeekKey(0);
+    const [year, month, day] = value.split('-').map(Number);
+    const mondayKey = dateKey(getMonday(new Date(year, month - 1, day)));
+    const offset = getWeekOffsetForDate(mondayKey);
+    return offset >= 0 && offset <= 3 ? mondayKey : getWeekKey(0);
+}
+
+function readSavedSchedules() {
+    try {
+        const savedWeeks = localStorage.getItem(WEEKS_STORAGE_KEY);
+        if (savedWeeks) {
+            const parsed = JSON.parse(savedWeeks);
+            const normalized = normalizeSchedulePayload(parsed);
+            if (Object.keys(normalized).length) return normalized;
+        }
+
+        const legacyRows = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        const oldDateRange = JSON.parse(localStorage.getItem(DATE_RANGE_STORAGE_KEY) || '{}');
+        return normalizeSchedulePayload(legacyRows, oldDateRange.startDate || '');
+    } catch (error) {
+        return {};
+    }
+}
+
+function makeBlankWeekSchedule() {
+    const knownWeek = Object.values(scheduleByWeek).find(Array.isArray);
+    const employeeNames = (knownWeek || DEFAULT_EMPLOYEES).map(employee => employee?.name || '');
+    return Array.from({ length: 7 }, (_, index) => ({ name: employeeNames[index] || '', shifts: Array(7).fill('') }));
 }
 
 function renderRows(employees) {
@@ -112,7 +198,10 @@ function collectSchedule() {
 
 function saveSchedule() {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(collectSchedule()));
+        const weekKey = getWeekKey(selectedWeekOffset);
+        scheduleByWeek[weekKey] = collectSchedule();
+        localStorage.setItem(WEEKS_STORAGE_KEY, JSON.stringify({ version: 2, weeks: scheduleByWeek }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(scheduleByWeek[weekKey]));
         localStorage.setItem(LOCAL_LAST_EDITED_KEY, new Date().toISOString());
         clearMessage();
     } catch (error) {
@@ -161,63 +250,46 @@ function formatHours(hours) {
     return hours.toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
-function initializeDateRange() {
-    const dateRange = readSavedDateRange();
-    document.getElementById('startDate').value = dateRange.startDate;
-    document.getElementById('endDate').value = dateRange.endDate;
-    document.getElementById('startDate').addEventListener('input', () => {
-        scheduleEditedSinceLoad = true;
-        saveDateRange();
+function formatDateWithWeekday(date) {
+    return new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+}
+
+function formatWeekLabel(dates = getWeekDates()) {
+    return `${formatDateWithWeekday(dates[0])} – ${formatDateWithWeekday(dates[6])}`;
+}
+
+function updateWeekNavigation() {
+    const dates = getWeekDates();
+    document.getElementById('weekPosition').textContent = `Week ${selectedWeekOffset + 1} of 4`;
+    document.getElementById('weekLabel').textContent = formatWeekLabel(dates);
+    document.getElementById('printDateRange').textContent = formatWeekLabel(dates);
+    document.getElementById('previousWeekButton').disabled = selectedWeekOffset === 0;
+    document.getElementById('nextWeekButton').disabled = selectedWeekOffset === 3;
+    DAYS.forEach((day, index) => {
+        const header = document.getElementById(`day-header-${index}`);
+        header.querySelector('.day-label').textContent = day.label;
+        header.querySelector('.day-date').textContent = String(dates[index].getDate());
+        header.setAttribute('aria-label', formatDateWithWeekday(dates[index]));
     });
-    document.getElementById('endDate').addEventListener('input', () => {
-        scheduleEditedSinceLoad = true;
-        saveDateRange();
-    });
-    updatePrintDateRange(dateRange);
 }
 
-function readSavedDateRange() {
+function changeSelectedWeek(change) {
+    const nextOffset = selectedWeekOffset + change;
+    if (nextOffset < 0 || nextOffset > 3) return;
+    const oldWeekKey = getWeekKey(selectedWeekOffset);
+    scheduleByWeek[oldWeekKey] = collectSchedule();
     try {
-        const saved = JSON.parse(localStorage.getItem(DATE_RANGE_STORAGE_KEY) || '{}');
-        return {
-            startDate: typeof saved.startDate === 'string' ? saved.startDate : '',
-            endDate: typeof saved.endDate === 'string' ? saved.endDate : ''
-        };
+        localStorage.setItem(WEEKS_STORAGE_KEY, JSON.stringify({ version: 2, weeks: scheduleByWeek }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(scheduleByWeek[oldWeekKey]));
     } catch (error) {
-        return { startDate: '', endDate: '' };
+        showMessage('Could not save the schedule in this browser.', 'error');
     }
-}
 
-function collectDateRange() {
-    return {
-        startDate: document.getElementById('startDate').value,
-        endDate: document.getElementById('endDate').value
-    };
-}
-
-function saveDateRange() {
-    const dateRange = collectDateRange();
-    updatePrintDateRange(dateRange);
-    try {
-        localStorage.setItem(DATE_RANGE_STORAGE_KEY, JSON.stringify(dateRange));
-        localStorage.setItem(LOCAL_LAST_EDITED_KEY, new Date().toISOString());
-    } catch (error) {
-        showMessage('Could not save the date range in this browser.', 'error');
-    }
-}
-
-function formatDateForDisplay(value) {
-    if (!value) return 'Not set';
-    const [year, month, day] = value.split('-');
-    return `${day}/${month}/${year}`;
-}
-
-function formatDateRange(dateRange) {
-    return `Starting Date: ${formatDateForDisplay(dateRange.startDate)}    Ending Date: ${formatDateForDisplay(dateRange.endDate)}`;
-}
-
-function updatePrintDateRange(dateRange = collectDateRange()) {
-    document.getElementById('printDateRange').textContent = formatDateRange(dateRange);
+    selectedWeekOffset = nextOffset;
+    updateWeekNavigation();
+    renderRows(scheduleByWeek[getWeekKey()] || makeBlankWeekSchedule());
+    calculateTotals();
+    clearMessage();
 }
 
 function getSupabaseClient() {
@@ -233,32 +305,54 @@ function getSupabaseClient() {
 async function saveToSupabase() {
     const button = document.getElementById('saveButton');
     const originalLabel = button.textContent;
-    const dateRange = collectDateRange();
-    if (dateRange.startDate && dateRange.endDate && dateRange.endDate < dateRange.startDate) {
-        showMessage('Ending Date must be on or after Starting Date.', 'error');
-        return;
-    }
-
+    const weekKey = getWeekKey();
+    const weekDates = getWeekDates();
+    scheduleByWeek[weekKey] = collectSchedule();
+    dirtyWeekKeys.add(weekKey);
+    const localChanges = new Set(dirtyWeekKeys);
+    const activeSchedule = scheduleByWeek[weekKey];
+    const actionButtons = Array.from(document.querySelectorAll('.button-group button'));
+    const scheduleInputs = Array.from(document.querySelectorAll('#scheduleBody input'));
     button.disabled = true;
     button.textContent = 'Saving…';
     button.setAttribute('aria-busy', 'true');
+    actionButtons.forEach(actionButton => { actionButton.disabled = true; });
+    scheduleInputs.forEach(input => { input.disabled = true; });
+    document.getElementById('previousWeekButton').disabled = true;
+    document.getElementById('nextWeekButton').disabled = true;
     try {
         const client = getSupabaseClient();
+        const { data: existing, error: loadError } = await client
+            .from(SUPABASE_TABLE)
+            .select('schedule, start_date')
+            .eq('user_id', PUBLIC_SCHEDULE_ROW_ID)
+            .maybeSingle();
+        if (loadError) throw loadError;
+
+        const mergedWeeks = normalizeSchedulePayload(existing?.schedule, existing?.start_date || weekKey);
+        localChanges.forEach(changedWeekKey => {
+            if (scheduleByWeek[changedWeekKey]) mergedWeeks[changedWeekKey] = scheduleByWeek[changedWeekKey];
+        });
+        mergedWeeks[weekKey] = activeSchedule;
         const updatedAt = new Date().toISOString();
         const { error: saveError } = await client
             .from(SUPABASE_TABLE)
             .upsert({
                 user_id: PUBLIC_SCHEDULE_ROW_ID,
-                schedule: collectSchedule(),
-                start_date: dateRange.startDate || null,
-                end_date: dateRange.endDate || null,
+                schedule: { version: 2, weeks: mergedWeeks },
+                start_date: dateKey(weekDates[0]),
+                end_date: dateKey(weekDates[6]),
                 updated_at: updatedAt
             }, { onConflict: 'user_id' });
         if (saveError) throw saveError;
 
+        scheduleByWeek = mergedWeeks;
+        dirtyWeekKeys.clear();
+        localStorage.setItem(WEEKS_STORAGE_KEY, JSON.stringify({ version: 2, weeks: scheduleByWeek }));
         localStorage.setItem(LOCAL_LAST_EDITED_KEY, updatedAt);
         scheduleEditedSinceLoad = false;
-        showMessage('Shared schedule saved for everyone.', 'success');
+        const savedWeeksCount = localChanges.size;
+        showMessage(`Shared schedule saved for ${savedWeeksCount} ${savedWeeksCount === 1 ? 'week' : 'weeks'}.`, 'success');
     } catch (error) {
         const message = String(error?.message || '');
         if (/row-level security|permission denied/i.test(message)) {
@@ -269,15 +363,18 @@ async function saveToSupabase() {
             showMessage('Could not save the schedule to Supabase. Please try again.', 'error');
         }
     } finally {
-        button.disabled = false;
+        actionButtons.forEach(actionButton => { actionButton.disabled = false; });
+        scheduleInputs.forEach(input => { input.disabled = false; });
         button.textContent = originalLabel;
         button.removeAttribute('aria-busy');
+        updateWeekNavigation();
     }
 }
 
 async function restoreSupabaseSchedule() {
     if (!window.supabase?.createClient) {
         showMessage('The public schedule could not be loaded. Please reload the page.', 'error');
+        finishInitialSupabaseLoad();
         return;
     }
     try {
@@ -288,43 +385,40 @@ async function restoreSupabaseSchedule() {
             .eq('user_id', PUBLIC_SCHEDULE_ROW_ID)
             .maybeSingle();
         if (error) throw error;
-        if (!data || !Array.isArray(data.schedule)) {
-            showMessage('The public schedule is not available yet.', 'error');
+        if (!data || !data.schedule) {
+            showMessage('No shared schedule has been saved yet. Enter shifts and press Save to share them.', 'success');
             return;
         }
 
-        if (scheduleEditedSinceLoad) {
-            showMessage('Your local edits are preserved. Press Save to share them.', 'success');
-            return;
-        }
-
-        const remoteSchedule = Array.from({ length: 7 }, (_, index) => {
-            const row = data.schedule[index] || {};
-            return {
-                name: typeof row.name === 'string' ? row.name : '',
-                shifts: DAYS.map((_, dayIndex) =>
-                    Array.isArray(row.shifts) && typeof row.shifts[dayIndex] === 'string'
-                        ? row.shifts[dayIndex]
-                        : ''
-                )
-            };
+        const remoteWeeks = normalizeSchedulePayload(data.schedule, data.start_date || getWeekKey(0));
+        dirtyWeekKeys.forEach(key => {
+            if (scheduleByWeek[key]) remoteWeeks[key] = scheduleByWeek[key];
         });
-        const dateRange = {
-            startDate: data.start_date || '',
-            endDate: data.end_date || ''
-        };
-        renderRows(remoteSchedule);
+        scheduleByWeek = remoteWeeks;
+        const activeWeekKey = getWeekKey(selectedWeekOffset);
+        renderRows(scheduleByWeek[activeWeekKey] || makeBlankWeekSchedule());
         calculateTotals();
-        document.getElementById('startDate').value = dateRange.startDate;
-        document.getElementById('endDate').value = dateRange.endDate;
-        updatePrintDateRange(dateRange);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(remoteSchedule));
-        localStorage.setItem(DATE_RANGE_STORAGE_KEY, JSON.stringify(dateRange));
+        updateWeekNavigation();
+        localStorage.setItem(WEEKS_STORAGE_KEY, JSON.stringify({ version: 2, weeks: scheduleByWeek }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(scheduleByWeek[activeWeekKey] || []));
         localStorage.setItem(LOCAL_LAST_EDITED_KEY, data.updated_at || new Date().toISOString());
-        showMessage('Shared schedule loaded. Anyone with the link can edit it.', 'success');
+        if (scheduleEditedSinceLoad) {
+            showMessage('Local edits are preserved. Press Save to share them.', 'success');
+        } else {
+            showMessage('Shared schedules loaded. Anyone with the link can edit them.', 'success');
+        }
     } catch (error) {
         showMessage('Could not load the saved schedule from Supabase.', 'error');
+    } finally {
+        finishInitialSupabaseLoad();
     }
+}
+
+function finishInitialSupabaseLoad() {
+    const button = document.getElementById('saveButton');
+    button.disabled = false;
+    button.textContent = 'Save';
+    button.removeAttribute('aria-busy');
 }
 
 function generateExcel() {
@@ -336,7 +430,7 @@ function generateExcel() {
     calculateTotals();
     const employees = collectSchedule();
     const dailyTotals = Array(DAYS.length).fill(0);
-    const data = [['Employee', ...DAYS.map(day => day.label), 'Total Hours']];
+    const data = [['Employee', ...DAYS.map((day, index) => `${day.label} ${getWeekDates()[index].getDate()}`), 'Total Hours']];
 
     employees.forEach((employee, index) => {
         let weeklyTotal = 0;
@@ -368,7 +462,7 @@ function generateExcel() {
 
 function generatePdfDownload() {
     calculateTotals();
-    const pdf = buildSchedulePdf(collectSchedule(), collectDateRange());
+    const pdf = buildSchedulePdf(collectSchedule(), formatWeekLabel());
     const blob = new Blob([pdf], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -384,7 +478,7 @@ function generatePdfDownload() {
     showMessage('PDF file downloaded.', 'success');
 }
 
-function buildSchedulePdf(employees, dateRange) {
+function buildSchedulePdf(employees, weekLabel) {
     const pageWidth = 841.89;
     const pageHeight = 595.28;
     const margin = 24;
@@ -443,9 +537,10 @@ function buildSchedulePdf(employees, dateRange) {
     };
 
     drawText('Weekly Schedule', margin, pageHeight - 45, 22, { bold: true, color: '#163b33' });
-    drawText(formatDateRange(dateRange), margin, pageHeight - 68, 10, { color: '#62726d' });
+    drawText(weekLabel, margin, pageHeight - 68, 10, { color: '#62726d' });
 
-    const headers = ['Employee', ...DAYS.map(day => day.label)];
+    const dates = getWeekDates();
+    const headers = ['Employee', ...DAYS.map((day, index) => `${day.label} ${dates[index].getDate()}`)];
     let x = tableX;
     headers.forEach((header, index) => {
         drawRect(x, tableTop - headerHeight, columnWidths[index], headerHeight, '#163b33');
@@ -510,11 +605,13 @@ function buildSchedulePdf(employees, dateRange) {
 }
 
 function clearAll() {
-    if (!window.confirm('Clear all employee names and shifts?')) return;
+    if (!window.confirm('Clear employee names and shifts for this week?')) return;
     document.querySelectorAll('.employee-input, .shift-input').forEach(input => { input.value = ''; });
+    scheduleEditedSinceLoad = true;
+    dirtyWeekKeys.add(getWeekKey());
     calculateTotals();
     saveSchedule();
-    showMessage('Schedule cleared.', 'success');
+    showMessage('This week’s schedule cleared. Press Save to share the change.', 'success');
 }
 
 function showMessage(text, type) {
