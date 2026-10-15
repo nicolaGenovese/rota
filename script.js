@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'turniSettimanali';
 const DATE_RANGE_STORAGE_KEY = 'turniSettimanaliDateRange';
 const WEEKS_STORAGE_KEY = 'turniSettimanaliWeeks';
+const WEEK_CLIPBOARD_KEY = 'turniSettimanaliWeekClipboard';
 const LOCAL_LAST_EDITED_KEY = 'turniSettimanaliLastEdited';
 const SUPABASE_URL = 'https://sudysoizwfddpladkzeo.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kcmzYpi72KPwt1aI_SOyVQ_-J2FpTqR';
@@ -10,6 +11,7 @@ let supabaseClient = null;
 let scheduleEditedSinceLoad = false;
 let scheduleByWeek = {};
 let dirtyWeekKeys = new Set();
+let copiedWeekSchedule = null;
 let selectedWeekOffset = 0;
 const currentWeekStart = getMonday(new Date());
 const DAYS = [
@@ -36,6 +38,7 @@ document.addEventListener('DOMContentLoaded', initializeSchedule);
 
 function initializeSchedule() {
     scheduleByWeek = readSavedSchedules();
+    copiedWeekSchedule = readWeekClipboard();
     const initialSchedule = scheduleByWeek[getWeekKey(0)]
         || (Object.keys(scheduleByWeek).length ? makeBlankWeekSchedule() : DEFAULT_EMPLOYEES);
     renderRows(initialSchedule);
@@ -50,10 +53,13 @@ function initializeSchedule() {
     document.getElementById('previousWeekButton').addEventListener('click', () => changeSelectedWeek(-1));
     document.getElementById('nextWeekButton').addEventListener('click', () => changeSelectedWeek(1));
     document.getElementById('saveButton').addEventListener('click', saveToSupabase);
+    document.getElementById('copyWeekButton').addEventListener('click', copyCurrentWeek);
+    document.getElementById('pasteWeekButton').addEventListener('click', pasteCopiedWeek);
     document.getElementById('pdfDownloadButton').addEventListener('click', generatePdfDownload);
     document.getElementById('excelButton').addEventListener('click', generateExcel);
     document.getElementById('pdfPrintButton').addEventListener('click', () => window.print());
     document.getElementById('clearButton').addEventListener('click', clearAll);
+    updateWeekClipboardButtons();
     calculateTotals();
     const saveButton = document.getElementById('saveButton');
     saveButton.disabled = true;
@@ -207,6 +213,53 @@ function saveSchedule() {
     } catch (error) {
         showMessage('Could not save the schedule in this browser.', 'error');
     }
+}
+
+function readWeekClipboard() {
+    try {
+        const savedClipboard = localStorage.getItem(WEEK_CLIPBOARD_KEY);
+        return savedClipboard ? normalizeEmployeeSchedule(JSON.parse(savedClipboard)) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function updateWeekClipboardButtons() {
+    document.getElementById('pasteWeekButton').disabled = !copiedWeekSchedule;
+}
+
+function copyCurrentWeek() {
+    const activeWeekKey = getWeekKey(selectedWeekOffset);
+    copiedWeekSchedule = normalizeEmployeeSchedule(collectSchedule());
+    scheduleByWeek[activeWeekKey] = copiedWeekSchedule;
+
+    try {
+        localStorage.setItem(WEEK_CLIPBOARD_KEY, JSON.stringify(copiedWeekSchedule));
+    } catch (error) {
+        // Keep the in-memory copy available if browser storage is full or disabled.
+    }
+    saveSchedule();
+    updateWeekClipboardButtons();
+    showMessage(`Copied the full schedule for ${formatWeekLabel()}. Select another week and paste it.`, 'success');
+}
+
+function pasteCopiedWeek() {
+    const pastedSchedule = normalizeEmployeeSchedule(copiedWeekSchedule);
+    if (!pastedSchedule) {
+        copiedWeekSchedule = null;
+        updateWeekClipboardButtons();
+        showMessage('Copy a week before pasting a schedule.', 'error');
+        return;
+    }
+
+    const activeWeekKey = getWeekKey(selectedWeekOffset);
+    scheduleByWeek[activeWeekKey] = pastedSchedule;
+    renderRows(pastedSchedule);
+    scheduleEditedSinceLoad = true;
+    dirtyWeekKeys.add(activeWeekKey);
+    calculateTotals();
+    saveSchedule();
+    showMessage('The full schedule was pasted into this week. Press Save to share it on Supabase.', 'success');
 }
 
 function parseTimeRange(value) {
@@ -368,6 +421,7 @@ async function saveToSupabase() {
         button.textContent = originalLabel;
         button.removeAttribute('aria-busy');
         updateWeekNavigation();
+        updateWeekClipboardButtons();
     }
 }
 
