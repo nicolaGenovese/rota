@@ -134,7 +134,7 @@ tr > :last-child { border-right: 0; }
 
 .shift-cell { position: relative; }
 .shift-input { padding-right: 28px; }
-.shift-type-select {
+.shift-type-toggle {
     position: absolute;
     top: 50%;
     right: 8px;
@@ -143,16 +143,16 @@ tr > :last-child { border-right: 0; }
     height: 34px;
     padding: 0;
     transform: translateY(-50%);
-    appearance: none;
     border: 0;
     background: transparent;
-    color: transparent;
+    color: #50665d;
+    font: inherit;
     cursor: pointer;
 }
-.shift-cell::after {
+.shift-type-toggle::after {
     position: absolute;
     top: 50%;
-    right: 17px;
+    left: 8px;
     width: 7px;
     height: 7px;
     transform: translateY(-70%) rotate(45deg);
@@ -161,8 +161,38 @@ tr > :last-child { border-right: 0; }
     content: '';
     pointer-events: none;
 }
-.shift-type-select:focus-visible { outline: 2px solid #74b69a; outline-offset: -3px; }
-.shift-type-select option { color: #18332e; background: #fff; }
+.shift-type-toggle:focus-visible { outline: 2px solid #74b69a; outline-offset: -3px; border-radius: 4px; }
+.shift-type-menu {
+    position: absolute;
+    right: 8px;
+    bottom: calc(100% - 2px);
+    z-index: 20;
+    min-width: 112px;
+    padding: 4px;
+    border: 1px solid #d7e1da;
+    border-radius: 7px;
+    background: #fff;
+    box-shadow: 0 5px 16px rgb(20 55 43 / 18%);
+    text-align: left;
+}
+.shift-type-menu.opens-down { top: calc(100% - 2px); bottom: auto; }
+.shift-type-menu[hidden] { display: none; }
+.shift-type-option {
+    display: block;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 4px;
+    background: #fff;
+    color: #18332e;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 650;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.shift-type-option:hover, .shift-type-option:focus-visible { background: #edf5ef; outline: none; }
 td.day-off { background: #e7f1ff !important; }
 td.holiday { background: #fff0d9 !important; }
 td.day-off .shift-input { border-color: #9bc4e8; background: #e7f1ff; color: #234d70; }
@@ -280,7 +310,7 @@ td.holiday .shift-input { border-color: #e8bf72; background: #fff0d9; color: #78
         opacity: 0 !important;
         visibility: hidden;
     }
-    .shift-type-select, .shift-cell::after { display: none !important; }
+    .shift-type-toggle, .shift-type-menu { display: none !important; }
     td.day-off, td.holiday { print-color-adjust: exact; }
     .weekly-total, .total-row, .grand-total { print-color-adjust: exact; }
     #scheduleTable thead th:last-child,
