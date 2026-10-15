@@ -7,6 +7,8 @@ const SUPABASE_URL = 'https://sudysoizwfddpladkzeo.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kcmzYpi72KPwt1aI_SOyVQ_-J2FpTqR';
 const SUPABASE_TABLE = 'weekly_schedules';
 const PUBLIC_SCHEDULE_ROW_ID = '1c3d3e6c-6dbe-4418-b8d6-3e3251b407a9';
+const DAY_OFF_VALUE = '__DAY_OFF__';
+const HOLIDAY_VALUE = '__HOLIDAY__';
 let supabaseClient = null;
 let scheduleEditedSinceLoad = false;
 let scheduleByWeek = {};
@@ -44,11 +46,14 @@ function initializeSchedule() {
     renderRows(initialSchedule);
     updateWeekNavigation();
 
-    document.getElementById('scheduleBody').addEventListener('input', () => {
-        scheduleEditedSinceLoad = true;
-        dirtyWeekKeys.add(getWeekKey(selectedWeekOffset));
-        calculateTotals();
-        saveSchedule();
+    const scheduleBody = document.getElementById('scheduleBody');
+    scheduleBody.addEventListener('input', event => {
+        if (!event.target.matches('.shift-type-select')) handleScheduleEdit();
+    });
+    scheduleBody.addEventListener('change', event => {
+        if (!event.target.matches('.shift-type-select')) return;
+        updateShiftCellAppearance(event.target);
+        handleScheduleEdit();
     });
     document.getElementById('previousWeekButton').addEventListener('click', () => changeSelectedWeek(-1));
     document.getElementById('nextWeekButton').addEventListener('click', () => changeSelectedWeek(1));
@@ -177,13 +182,31 @@ function renderRows(employees) {
 
         DAYS.forEach((day, dayIndex) => {
             const cell = document.createElement('td');
+            const shiftType = document.createElement('select');
+            shiftType.className = 'shift-type-select';
+            shiftType.setAttribute('aria-label', `${day.label}, employee ${rowIndex + 1} shift type`);
+            [
+                { value: 'shift', label: 'Shift' },
+                { value: 'day-off', label: 'Day off' },
+                { value: 'holiday', label: 'Holiday' }
+            ].forEach(optionData => {
+                const option = document.createElement('option');
+                option.value = optionData.value;
+                option.textContent = optionData.label;
+                shiftType.append(option);
+            });
+
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'shift-input';
             input.placeholder = '00:00-00:00';
-        input.setAttribute('aria-label', `${day.label}, employee ${rowIndex + 1}`);
-            input.value = employee.shifts?.[dayIndex] || '';
-            cell.append(input);
+            input.setAttribute('aria-label', `${day.label}, employee ${rowIndex + 1} shift times`);
+            const savedValue = employee.shifts?.[dayIndex] || '';
+            shiftType.value = getShiftType(savedValue);
+            input.value = getShiftText(savedValue);
+            input.hidden = shiftType.value !== 'shift';
+            cell.append(shiftType, input);
+            updateShiftCellAppearance(shiftType);
             row.append(cell);
         });
 
@@ -198,8 +221,43 @@ function renderRows(employees) {
 function collectSchedule() {
     return Array.from(document.querySelectorAll('#scheduleBody tr'), row => ({
         name: row.querySelector('.employee-input').value.trim(),
-        shifts: Array.from(row.querySelectorAll('.shift-input'), input => input.value.trim())
+        shifts: Array.from(row.querySelectorAll('.shift-type-select'), shiftType => {
+            if (shiftType.value === 'day-off') return DAY_OFF_VALUE;
+            if (shiftType.value === 'holiday') return HOLIDAY_VALUE;
+            return shiftType.parentElement.querySelector('.shift-input').value.trim();
+        })
     }));
+}
+
+function getShiftType(value) {
+    if (value === DAY_OFF_VALUE) return 'day-off';
+    if (value === HOLIDAY_VALUE) return 'holiday';
+    return 'shift';
+}
+
+function getShiftText(value) {
+    return getShiftType(value) === 'shift' ? value : '';
+}
+
+function updateShiftCellAppearance(shiftType) {
+    const cell = shiftType.closest('td');
+    const shiftInput = cell.querySelector('.shift-input');
+    shiftInput.hidden = shiftType.value !== 'shift';
+    cell.classList.toggle('day-off', shiftType.value === 'day-off');
+    cell.classList.toggle('holiday', shiftType.value === 'holiday');
+}
+
+function handleScheduleEdit() {
+    scheduleEditedSinceLoad = true;
+    dirtyWeekKeys.add(getWeekKey(selectedWeekOffset));
+    calculateTotals();
+    saveSchedule();
+}
+
+function getShiftDisplayValue(value) {
+    if (value === DAY_OFF_VALUE) return 'Day off';
+    if (value === HOLIDAY_VALUE) return 'Holiday';
+    return value;
 }
 
 function saveSchedule() {
@@ -492,7 +550,7 @@ function generateExcel() {
             const hours = parseTimeRange(shift);
             dailyTotals[dayIndex] += hours;
             weeklyTotal += hours;
-            return shift;
+            return getShiftDisplayValue(shift);
         });
         const name = employee.name || (employee.shifts.some(Boolean) ? `Employee ${index + 1}` : '');
         data.push([name, ...shifts, Number(weeklyTotal.toFixed(2))]);
@@ -606,10 +664,13 @@ function buildSchedulePdf(employees, weekLabel) {
         const rowTop = tableTop - headerHeight - rowIndex * rowHeight;
         const rowBottom = rowTop - rowHeight;
         x = tableX;
-        const values = [employee.name, ...employee.shifts];
+        const values = [employee.name, ...employee.shifts.map(getShiftDisplayValue)];
         values.forEach((value, columnIndex) => {
             const width = columnWidths[columnIndex];
-            const fill = rowIndex % 2 === 1 ? '#f8faf8' : '#ffffff';
+            const shiftValue = columnIndex > 0 ? employee.shifts[columnIndex - 1] : '';
+            const fill = shiftValue === DAY_OFF_VALUE ? '#e7f1ff'
+                : shiftValue === HOLIDAY_VALUE ? '#fff0d9'
+                    : rowIndex % 2 === 1 ? '#f8faf8' : '#ffffff';
             drawRect(x, rowBottom, width, rowHeight, fill);
             const fontSize = columnIndex === 0 && value
                 ? Math.max(6, Math.min(9, (width - 12) / (String(value).length * 0.52)))
@@ -661,6 +722,10 @@ function buildSchedulePdf(employees, weekLabel) {
 function clearAll() {
     if (!window.confirm('Clear employee names and shifts for this week?')) return;
     document.querySelectorAll('.employee-input, .shift-input').forEach(input => { input.value = ''; });
+    document.querySelectorAll('.shift-type-select').forEach(shiftType => {
+        shiftType.value = 'shift';
+        updateShiftCellAppearance(shiftType);
+    });
     scheduleEditedSinceLoad = true;
     dirtyWeekKeys.add(getWeekKey());
     calculateTotals();
