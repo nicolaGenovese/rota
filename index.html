@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="styles.css">
     <script src="vendor/xlsx.full.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js" defer></script>
-    <script src="script.js?v=public-edit-20261010" defer></script>
+    <script src="script.js?v=four-week-schedule-20261015" defer></script>
 </head>
 <body>
     <main class="container">
@@ -20,32 +20,30 @@
             </div>
         </header>
 
-        <div class="date-range-controls" aria-label="Schedule date range">
-            <label class="date-range-field" for="startDate">
-                Starting Date
-                <input id="startDate" type="date">
-            </label>
-            <label class="date-range-field" for="endDate">
-                Ending Date
-                <input id="endDate" type="date">
-            </label>
-        </div>
+        <section class="week-navigation" aria-label="Schedule week">
+            <button class="week-nav-button" id="previousWeekButton" type="button" aria-label="Previous week">←</button>
+            <div class="week-current" aria-live="polite">
+                <p id="weekPosition">Week 1 of 4</p>
+                <h2 id="weekLabel"></h2>
+            </div>
+            <button class="week-nav-button" id="nextWeekButton" type="button" aria-label="Next week">→</button>
+        </section>
         <p id="printDateRange" class="print-date-range"></p>
 
-        <p class="local-note" id="localNote">Anyone with this link can view, edit and save the shared schedule. Each save replaces it for everyone.</p>
+        <p class="local-note" id="localNote">Anyone with this link can view, edit and save the shared schedule. Save stores all weeks changed since the last save.</p>
 
         <div class="table-wrapper">
             <table id="scheduleTable">
                 <thead>
                     <tr>
                         <th scope="col">Employee</th>
-                        <th scope="col">Monday</th>
-                        <th scope="col">Tuesday</th>
-                        <th scope="col">Wednesday</th>
-                        <th scope="col">Thursday</th>
-                        <th scope="col">Friday</th>
-                        <th scope="col">Saturday</th>
-                        <th scope="col">Sunday</th>
+                        <th scope="col" id="day-header-0"><span class="day-label">Monday</span><span class="day-date"></span></th>
+                        <th scope="col" id="day-header-1"><span class="day-label">Tuesday</span><span class="day-date"></span></th>
+                        <th scope="col" id="day-header-2"><span class="day-label">Wednesday</span><span class="day-date"></span></th>
+                        <th scope="col" id="day-header-3"><span class="day-label">Thursday</span><span class="day-date"></span></th>
+                        <th scope="col" id="day-header-4"><span class="day-label">Friday</span><span class="day-date"></span></th>
+                        <th scope="col" id="day-header-5"><span class="day-label">Saturday</span><span class="day-date"></span></th>
+                        <th scope="col" id="day-header-6"><span class="day-label">Sunday</span><span class="day-date"></span></th>
                         <th scope="col">Total Hours</th>
                     </tr>
                 </thead>
