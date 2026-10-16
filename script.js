@@ -1,15 +1,19 @@
 const STORAGE_KEY = 'turniSettimanali';
 const DATE_RANGE_STORAGE_KEY = 'turniSettimanaliDateRange';
 const WEEKS_STORAGE_KEY = 'turniSettimanaliWeeks';
+const WEEK_CLIPBOARD_KEY = 'turniSettimanaliWeekClipboard';
 const LOCAL_LAST_EDITED_KEY = 'turniSettimanaliLastEdited';
 const SUPABASE_URL = 'https://sudysoizwfddpladkzeo.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kcmzYpi72KPwt1aI_SOyVQ_-J2FpTqR';
 const SUPABASE_TABLE = 'weekly_schedules';
 const PUBLIC_SCHEDULE_ROW_ID = '1c3d3e6c-6dbe-4418-b8d6-3e3251b407a9';
+const DAY_OFF_VALUE = '__DAY_OFF__';
+const HOLIDAY_VALUE = '__HOLIDAY__';
 let supabaseClient = null;
 let scheduleEditedSinceLoad = false;
 let scheduleByWeek = {};
 let dirtyWeekKeys = new Set();
+let copiedWeekSchedule = null;
 let selectedWeekOffset = 0;
 const currentWeekStart = getMonday(new Date());
 const DAYS = [
@@ -36,24 +40,83 @@ document.addEventListener('DOMContentLoaded', initializeSchedule);
 
 function initializeSchedule() {
     scheduleByWeek = readSavedSchedules();
+    copiedWeekSchedule = readWeekClipboard();
     const initialSchedule = scheduleByWeek[getWeekKey(0)]
         || (Object.keys(scheduleByWeek).length ? makeBlankWeekSchedule() : DEFAULT_EMPLOYEES);
     renderRows(initialSchedule);
     updateWeekNavigation();
 
-    document.getElementById('scheduleBody').addEventListener('input', () => {
-        scheduleEditedSinceLoad = true;
-        dirtyWeekKeys.add(getWeekKey(selectedWeekOffset));
-        calculateTotals();
-        saveSchedule();
+    const scheduleBody = document.getElementById('scheduleBody');
+    scheduleBody.addEventListener('input', event => {
+        if (event.target.matches('.shift-input')) handleScheduleEdit();
+    });
+    scheduleBody.addEventListener('focusin', event => {
+        const shiftInput = event.target.closest('.shift-input');
+        if (!shiftInput || (shiftInput.dataset.shiftType !== 'day-off' && shiftInput.dataset.shiftType !== 'holiday')) return;
+        shiftInput.dataset.shiftType = 'shift';
+        shiftInput.value = '';
+        updateShiftCellAppearance(shiftInput);
+        handleScheduleEdit();
+    });
+    scheduleBody.addEventListener('click', event => {
+        const toggle = event.target.closest('.shift-type-toggle');
+        if (toggle) {
+            const shouldOpen = toggle.getAttribute('aria-expanded') !== 'true';
+            closeShiftMenus();
+            if (shouldOpen) {
+                toggle.setAttribute('aria-expanded', 'true');
+                document.getElementById(toggle.getAttribute('aria-controls')).hidden = false;
+            }
+            return;
+        }
+
+        const option = event.target.closest('.shift-type-option');
+        if (option) {
+            const cell = option.closest('.shift-cell');
+            setShiftCellType(cell.querySelector('.shift-input'), option.dataset.shiftType);
+            closeShiftMenus();
+            handleScheduleEdit();
+        }
+    });
+    scheduleBody.addEventListener('keydown', event => {
+        const toggle = event.target.closest('.shift-type-toggle');
+        if (toggle && event.key === 'ArrowDown') {
+            event.preventDefault();
+            toggle.click();
+            document.getElementById(toggle.getAttribute('aria-controls')).querySelector('.shift-type-option').focus();
+            return;
+        }
+
+        const option = event.target.closest('.shift-type-option');
+        if (option && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+            event.preventDefault();
+            const options = Array.from(option.parentElement.querySelectorAll('.shift-type-option'));
+            const index = options.indexOf(option);
+            options[(index + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length].focus();
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            const cell = event.target.closest('.shift-cell');
+            if (!cell) return;
+            closeShiftMenus();
+            cell.querySelector('.shift-type-toggle').focus();
+        }
+    });
+    document.addEventListener('click', event => {
+        if (event.target.closest('.shift-type-toggle, .shift-type-option')) return;
+        closeShiftMenus();
     });
     document.getElementById('previousWeekButton').addEventListener('click', () => changeSelectedWeek(-1));
     document.getElementById('nextWeekButton').addEventListener('click', () => changeSelectedWeek(1));
     document.getElementById('saveButton').addEventListener('click', saveToSupabase);
+    document.getElementById('copyWeekButton').addEventListener('click', copyCurrentWeek);
+    document.getElementById('pasteWeekButton').addEventListener('click', pasteCopiedWeek);
     document.getElementById('pdfDownloadButton').addEventListener('click', generatePdfDownload);
     document.getElementById('excelButton').addEventListener('click', generateExcel);
     document.getElementById('pdfPrintButton').addEventListener('click', () => window.print());
     document.getElementById('clearButton').addEventListener('click', clearAll);
+    updateWeekClipboardButtons();
     calculateTotals();
     const saveButton = document.getElementById('saveButton');
     saveButton.disabled = true;
@@ -171,13 +234,44 @@ function renderRows(employees) {
 
         DAYS.forEach((day, dayIndex) => {
             const cell = document.createElement('td');
+            cell.className = 'shift-cell';
+            const menuId = `shift-type-menu-${rowIndex}-${dayIndex}`;
+            const menuToggle = document.createElement('button');
+            menuToggle.type = 'button';
+            menuToggle.className = 'shift-type-toggle';
+            menuToggle.setAttribute('aria-label', `${day.label}, employee ${rowIndex + 1}: choose Day off or Holiday`);
+            menuToggle.setAttribute('aria-haspopup', 'menu');
+            menuToggle.setAttribute('aria-expanded', 'false');
+            menuToggle.setAttribute('aria-controls', menuId);
+
+            const menu = document.createElement('div');
+            menu.id = menuId;
+            menu.className = `shift-type-menu${rowIndex < 2 ? ' opens-down' : ''}`;
+            menu.setAttribute('role', 'menu');
+            menu.hidden = true;
+            [
+                { value: 'day-off', label: 'Day off' },
+                { value: 'holiday', label: 'Holiday' }
+            ].forEach(optionData => {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = 'shift-type-option';
+                option.setAttribute('role', 'menuitem');
+                option.dataset.shiftType = optionData.value;
+                option.textContent = optionData.label;
+                menu.append(option);
+            });
+
             const input = document.createElement('input');
             input.type = 'text';
             input.className = 'shift-input';
             input.placeholder = '00:00-00:00';
-        input.setAttribute('aria-label', `${day.label}, employee ${rowIndex + 1}`);
-            input.value = employee.shifts?.[dayIndex] || '';
-            cell.append(input);
+            input.setAttribute('aria-label', `${day.label}, employee ${rowIndex + 1} shift times`);
+            const savedValue = employee.shifts?.[dayIndex] || '';
+            input.dataset.shiftType = getShiftType(savedValue);
+            input.value = getShiftText(savedValue);
+            cell.append(input, menuToggle, menu);
+            updateShiftCellAppearance(input);
             row.append(cell);
         });
 
@@ -192,8 +286,57 @@ function renderRows(employees) {
 function collectSchedule() {
     return Array.from(document.querySelectorAll('#scheduleBody tr'), row => ({
         name: row.querySelector('.employee-input').value.trim(),
-        shifts: Array.from(row.querySelectorAll('.shift-input'), input => input.value.trim())
+        shifts: Array.from(row.querySelectorAll('.shift-input'), shiftInput => {
+            if (shiftInput.dataset.shiftType === 'day-off') return DAY_OFF_VALUE;
+            if (shiftInput.dataset.shiftType === 'holiday') return HOLIDAY_VALUE;
+            return shiftInput.value.trim();
+        })
     }));
+}
+
+function getShiftType(value) {
+    if (value === DAY_OFF_VALUE) return 'day-off';
+    if (value === HOLIDAY_VALUE) return 'holiday';
+    return 'shift';
+}
+
+function getShiftText(value) {
+    return getShiftType(value) === 'shift' ? value : '';
+}
+
+function updateShiftCellAppearance(shiftInput) {
+    const cell = shiftInput.closest('td');
+    if (shiftInput.dataset.shiftType === 'day-off') shiftInput.value = 'Day off';
+    else if (shiftInput.dataset.shiftType === 'holiday') shiftInput.value = 'Holiday';
+    else if (shiftInput.value === 'Day off' || shiftInput.value === 'Holiday') shiftInput.value = '';
+    cell.classList.toggle('day-off', shiftInput.dataset.shiftType === 'day-off');
+    cell.classList.toggle('holiday', shiftInput.dataset.shiftType === 'holiday');
+}
+
+function setShiftCellType(shiftInput, type) {
+    shiftInput.dataset.shiftType = type;
+    updateShiftCellAppearance(shiftInput);
+}
+
+function closeShiftMenus() {
+    document.querySelectorAll('.shift-type-toggle[aria-expanded="true"]').forEach(toggle => {
+        toggle.setAttribute('aria-expanded', 'false');
+        const menu = document.getElementById(toggle.getAttribute('aria-controls'));
+        if (menu) menu.hidden = true;
+    });
+}
+
+function handleScheduleEdit() {
+    scheduleEditedSinceLoad = true;
+    dirtyWeekKeys.add(getWeekKey(selectedWeekOffset));
+    calculateTotals();
+    saveSchedule();
+}
+
+function getShiftDisplayValue(value) {
+    if (value === DAY_OFF_VALUE) return 'Day off';
+    if (value === HOLIDAY_VALUE) return 'Holiday';
+    return value;
 }
 
 function saveSchedule() {
@@ -207,6 +350,53 @@ function saveSchedule() {
     } catch (error) {
         showMessage('Could not save the schedule in this browser.', 'error');
     }
+}
+
+function readWeekClipboard() {
+    try {
+        const savedClipboard = localStorage.getItem(WEEK_CLIPBOARD_KEY);
+        return savedClipboard ? normalizeEmployeeSchedule(JSON.parse(savedClipboard)) : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function updateWeekClipboardButtons() {
+    document.getElementById('pasteWeekButton').disabled = !copiedWeekSchedule;
+}
+
+function copyCurrentWeek() {
+    const activeWeekKey = getWeekKey(selectedWeekOffset);
+    copiedWeekSchedule = normalizeEmployeeSchedule(collectSchedule());
+    scheduleByWeek[activeWeekKey] = copiedWeekSchedule;
+
+    try {
+        localStorage.setItem(WEEK_CLIPBOARD_KEY, JSON.stringify(copiedWeekSchedule));
+    } catch (error) {
+        // Keep the in-memory copy available if browser storage is full or disabled.
+    }
+    saveSchedule();
+    updateWeekClipboardButtons();
+    showMessage(`Copied the full schedule for ${formatWeekLabel()}. Select another week and paste it.`, 'success');
+}
+
+function pasteCopiedWeek() {
+    const pastedSchedule = normalizeEmployeeSchedule(copiedWeekSchedule);
+    if (!pastedSchedule) {
+        copiedWeekSchedule = null;
+        updateWeekClipboardButtons();
+        showMessage('Copy a week before pasting a schedule.', 'error');
+        return;
+    }
+
+    const activeWeekKey = getWeekKey(selectedWeekOffset);
+    scheduleByWeek[activeWeekKey] = pastedSchedule;
+    renderRows(pastedSchedule);
+    scheduleEditedSinceLoad = true;
+    dirtyWeekKeys.add(activeWeekKey);
+    calculateTotals();
+    saveSchedule();
+    showMessage('The full schedule was pasted into this week. Press Save to share it on Supabase.', 'success');
 }
 
 function parseTimeRange(value) {
@@ -368,6 +558,7 @@ async function saveToSupabase() {
         button.textContent = originalLabel;
         button.removeAttribute('aria-busy');
         updateWeekNavigation();
+        updateWeekClipboardButtons();
     }
 }
 
@@ -438,7 +629,7 @@ function generateExcel() {
             const hours = parseTimeRange(shift);
             dailyTotals[dayIndex] += hours;
             weeklyTotal += hours;
-            return shift;
+            return getShiftDisplayValue(shift);
         });
         const name = employee.name || (employee.shifts.some(Boolean) ? `Employee ${index + 1}` : '');
         data.push([name, ...shifts, Number(weeklyTotal.toFixed(2))]);
@@ -552,10 +743,13 @@ function buildSchedulePdf(employees, weekLabel) {
         const rowTop = tableTop - headerHeight - rowIndex * rowHeight;
         const rowBottom = rowTop - rowHeight;
         x = tableX;
-        const values = [employee.name, ...employee.shifts];
+        const values = [employee.name, ...employee.shifts.map(getShiftDisplayValue)];
         values.forEach((value, columnIndex) => {
             const width = columnWidths[columnIndex];
-            const fill = rowIndex % 2 === 1 ? '#f8faf8' : '#ffffff';
+            const shiftValue = columnIndex > 0 ? employee.shifts[columnIndex - 1] : '';
+            const fill = shiftValue === DAY_OFF_VALUE ? '#e7f1ff'
+                : shiftValue === HOLIDAY_VALUE ? '#fff0d9'
+                    : rowIndex % 2 === 1 ? '#f8faf8' : '#ffffff';
             drawRect(x, rowBottom, width, rowHeight, fill);
             const fontSize = columnIndex === 0 && value
                 ? Math.max(6, Math.min(9, (width - 12) / (String(value).length * 0.52)))
@@ -607,6 +801,10 @@ function buildSchedulePdf(employees, weekLabel) {
 function clearAll() {
     if (!window.confirm('Clear employee names and shifts for this week?')) return;
     document.querySelectorAll('.employee-input, .shift-input').forEach(input => { input.value = ''; });
+    document.querySelectorAll('.shift-input').forEach(shiftInput => {
+        shiftInput.dataset.shiftType = 'shift';
+        updateShiftCellAppearance(shiftInput);
+    });
     scheduleEditedSinceLoad = true;
     dirtyWeekKeys.add(getWeekKey());
     calculateTotals();
