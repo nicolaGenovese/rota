@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="styles.css">
     <script src="vendor/xlsx.full.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.min.js" defer></script>
-    <script src="script.js?v=visible-shift-menu-20261015" defer></script>
+    <script src="script.js?v=rolling-week-history-20261025" defer></script>
 </head>
 <body>
     <main class="container">
@@ -28,6 +28,13 @@
             </div>
             <button class="week-nav-button" id="nextWeekButton" type="button" aria-label="Next week">→</button>
         </section>
+        <div class="history-navigation">
+            <label for="historyWeekSelect">History</label>
+            <select id="historyWeekSelect" aria-label="Choose a past week">
+                <option value="">Past weeks…</option>
+            </select>
+            <button class="btn btn-secondary" id="currentWeekButton" type="button" hidden>Return to current week</button>
+        </div>
         <p id="printDateRange" class="print-date-range"></p>
 
         <p class="local-note" id="localNote">Anyone with this link can view, edit and save the shared schedule. Save stores all weeks changed since the last save.</p>
